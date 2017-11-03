@@ -1,11 +1,14 @@
 from flask import Flask, jsonify, request
 import flask_sqlalchemy
 import hashlib
-
+import logging
+import sys
 
 db = flask_sqlalchemy.SQLAlchemy()
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blocks.db'
+app.logger.addHandler(logging.StreamHandler(sys.stdout))
+app.logger.setLevel(logging.INFO)
 
 db.init_app(app)
 
@@ -72,8 +75,6 @@ class Block(db.Model):
         message.update(str(block.get('nonce')).encode('utf-8'))
         message.update(str(block.get('data')).encode('utf-8'))
         message.update(str(block.get('previous_hash')).encode('utf-8'))
-        import pdb
-        pdb.set_trace()
         return message.hexdigest()
 
     @classmethod
@@ -81,11 +82,23 @@ class Block(db.Model):
         #TODO: more here
         if Block.validate(block):
             if Block.verify_hash(block):
-                oldblock = db.session.query(Block).filter(Block.data==request.json[0].get('data')).first()
+                oldblock = db.session.query(Block).filter(Block.data==block.get('data')).first()
+                if oldblock.nonce:
+                    # nonce has already been found, skipping
+                    app.logger.info('Nonce already found for block {}, discarding.'.format(block))
+                    return
+                else:
+                    oldblock.nonce = block.get('nonce')
+                    oldblock.identifier = block.get('identifier')
+                    oldblock.previous_hash = block.get('previous_hash')
+                    oldblock.save()
+                    return True
             else:
-                return "invalid hash"
+                app.logger.info('Invalid hash for block {}, discarding.'.format(block))
+                return
         else:
-            return "invalid block"
+            app.logger.info('Invalid block {}, discarding.'.format(block))
+            return
 
 @app.route('/chain', methods=['GET', 'POST'])
 def chain():
@@ -94,8 +107,14 @@ def chain():
     elif request.method == 'POST':
         if request.json is not None:
             if isinstance(request.json, list):
+                updated = False
                 for block in request.json:
-
+                    if Block.update(block):
+                        updated = True
+                if updated:
+                    return 'blockchain updated'
+                else:
+                    return 'blockchain not updated'
             else:
                 return "invalid json"
         else:
