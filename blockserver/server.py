@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from datetime import datetime as dt
 import flask_sqlalchemy
 import hashlib
 import logging
@@ -11,6 +12,13 @@ app.logger.addHandler(logging.StreamHandler(sys.stdout))
 app.logger.setLevel(logging.INFO)
 
 db.init_app(app)
+
+class Status(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    client_id = db.Column(db.String, unique=True)
+    user = db.Column(db.String)
+    updated_at = db.Column(db.DateTime, default=dt.utcnow)
+    hashrate = db.Column(db.Integer)
 
 class Block(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -119,4 +127,12 @@ def chain():
                 return "invalid json"
         else:
             return "invalid post"
-                        
+
+
+@app.route('/status', methods=['GET', 'POST'])
+def status():
+    if request.method == 'GET':
+        pass
+    elif request.method == 'POST':
+        import pdb
+        pdb.set_trace()
