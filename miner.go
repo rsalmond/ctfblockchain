@@ -1,6 +1,7 @@
 package main
 
 import "fmt"
+import "os"
 import "strings"
 import "bytes"
 import "strconv"
@@ -13,8 +14,19 @@ import "encoding/json"
 import "github.com/pkg/errors"
 import (log "github.com/sirupsen/logrus")
 
-//var blockserver string = "http://192.168.0.15:5000/chain"
+//var blockserver string = "http://192.168.0.19:5000/chain"
 var blockserver string = "http://localhost:5000/chain"
+
+type Status struct {
+	Username string `json:"username"`
+	ClientId string `json:"client_id"`
+	HashRate string `json:"hash_rate"`
+}
+
+type Config struct {
+	Username string `json:"username"`
+	ClientId string `json:"client_id"`
+}
 
 type Block struct {
 	Identifier string `json:"identifier"`
@@ -135,7 +147,56 @@ func mineChain(c []Block) ([]Block, error) {
 	return nil, errors.New("Unable to solve this block!")
 }
 
+func getConfig() (username string, clientid string, config_error error) {
+	// either produce a new config file or read an existing one
+
+	config := Config{}
+	config_filename := "miner_config.json"
+	config_default_username := "your username here"
+
+	if _, err := os.Stat(config_filename); os.IsNotExist(err) {
+		// generate a new config file
+		config.Username = config_default_username
+		random := rand.New(rand.NewSource(time.Now().UnixNano()))
+		config.ClientId = strings.ToUpper(fmt.Sprintf("%x", random.Int()))
+		config_data, _ := json.Marshal(config)
+
+		file, file_err := os.Create(config_filename)
+		if file_err != nil {
+			return "", "", errors.Wrap(file_err, "Unable to create config file: " + config_filename)
+		}
+		defer file.Close()
+
+		_, write_err := file.Write(config_data)
+		if write_err != nil {
+			return "", "", errors.Wrap(file_err, "Unable to write to config file: " + config_filename)
+		}
+		return "", "", errors.New("No config file found, a new one has been created. Please configure your username and restart the miner.")
+	} else {
+		config_data, file_err := ioutil.ReadFile(config_filename)
+		if err != nil {
+			return "", "", errors.Wrap(file_err, "Unable to read config file: " + config_filename)
+		}
+
+		if json_err := json.Unmarshal(config_data, &config); json_err != nil {
+			return "", "", errors.Wrap(json_err, "Unable to parse config json.")
+		}
+		if config.Username == config_default_username {
+			return "", "", errors.New("Please edit config file and add a username before restarting miner.")
+		}
+		return config.Username, config.ClientId, nil
+	}
+	return "", "", nil
+}
+
 func main() {
+	_, _, err := getConfig()
+	if err != nil {
+		fmt.Printf("%s\n", err)
+		fmt.Println("Exiting.")
+		return
+	}
+
 	for {
 		// fetch blocks
 		blockchain, err := getChain()
