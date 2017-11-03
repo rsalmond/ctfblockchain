@@ -1,16 +1,17 @@
 package main
 
 import "fmt"
-//import "strings"
+import "strings"
 import "bytes"
 import "strconv"
-//import "time"
+import "time"
 import "io/ioutil"
-//import "math/rand"
+import "math/rand"
 import "crypto/sha256"
 import "net/http"
 import "encoding/json"
 import "github.com/pkg/errors"
+import (log "github.com/sirupsen/logrus")
 
 //var blockserver string = "http://192.168.0.15:5000/chain"
 var blockserver string = "http://localhost:5000/chain"
@@ -34,12 +35,12 @@ func (b *Block) hash() []byte {
 
 func (b *Block) set_blockid() {
 	// set a consistent block identifier by hashing what we have to start with
-	//b.Identifier = strings.ToUpper(fmt.Sprintf("%x", b.hash())[0:32])
-	b.Identifier = "CCCB46AF6C3AAE0F48DA3E97AEBA4A4F"
+	b.Identifier = strings.ToUpper(fmt.Sprintf("%x", b.hash())[0:32])
 }
 
 func getChain() (blocks []Block, err error) {
 	// fetch and decode blockchain state json
+	log.Info("Getting blockchain from server.")
 	resp, err := http.Get(blockserver)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to connect to blockserver: " + blockserver)
@@ -60,6 +61,7 @@ func getChain() (blocks []Block, err error) {
 
 func postChain(blocks_json []byte) error {
 	//TODO: some better checking on this response
+	log.Info("Posting update to blockserver.")
 	resp, err := http.Post(blockserver, "application/json", bytes.NewBuffer(blocks_json))
 	if err != nil {
 		return errors.Wrap(err, "Failed to post updated blockchain to blockserver.")
@@ -70,16 +72,13 @@ func postChain(blocks_json []byte) error {
 		return errors.Wrap(err, "Blockserver did not validate chain update." + string(body))
 	}
 
-	fmt.Println(string(body))
+	log.Info(fmt.Sprintf("Blockserver responded: %s", string(body)))
 	return nil
 }
 
 func difficultyTarget(target int) string {
-	/*var difficulty_target []byte
-	for i := 0; i < target; i++ {
-		difficulty_target = append(difficulty_target, 0)
-	}
-	return difficulty_target*/
+	// difficulty is based on the number of 0's at the beginning of the hash
+	// so build a buffer of 0's to compare to the hash
 	var target_buffer bytes.Buffer
 	for i := 0; i < target; i++ {
 		target_buffer.WriteString("0")
@@ -100,53 +99,69 @@ func mineChain(c []Block) ([]Block, error) {
 			break
 		}
 	}
-	//TODO: stop mining if all blocks are solved
+	// stop mining if all blocks are solved
+	if currentBlock.Difficulty == 0 {
+		return nil, errors.New("No blocks found to solve.")
+	}
 
-	fmt.Printf("Working on block number %d at difficulty rating %d\n", currentBlock_num, currentBlock.Difficulty)
+	log.Info(fmt.Sprintf("Working on block number %d at difficulty rating %d", currentBlock_num, currentBlock.Difficulty))
 
 	currentBlock.set_blockid()
 	currentBlock.Previous_hash = fmt.Sprintf("%x", previousBlock.hash())
 	difficulty_target := difficultyTarget(currentBlock.Difficulty)
 
 	hashed := make([]byte,0)
-	//for i := 0; i < 1000000000; i++ {
-	for i := 56955062; i < 56955065; i++ {
-		currentBlock.Nonce = i
+	random := rand.New(rand.NewSource(time.Now().UnixNano()))
+	hash_count := 0
+	start_time := time.Now().Unix()
+	// hash block with random nonce values until we hit a hash that has enough 0's 
+	// at the beginning to satisfy the difficulty requirement
+	for {
+		currentBlock.Nonce = random.Int()
 		hashed = currentBlock.hash()
 		hashed_string := fmt.Sprintf("%x", hashed)
-		fmt.Printf("%x\n", hashed)
-		//fmt.Println(hashed_string)
 		if hashed_string[0:currentBlock.Difficulty] == difficulty_target {
-			//fmt.Printf("%d\n", hashed)
-			//fmt.Println(currentBlock)
 			c[currentBlock_num] = currentBlock
-			//fmt.Println("miner returning")
 			return c, nil
 		}
+		hash_count++
+		if start_time + 10 < time.Now().Unix() {
+			log.Info(fmt.Sprintf("Hashes per second: %d", hash_count / 10))
+			hash_count = 0
+			start_time = time.Now().Unix()
+		}
 	}
-	//fmt.Printf("%v\n", currentBlock)
+	log.Info(fmt.Sprintf("Block: %+v\n", currentBlock))
 	return nil, errors.New("Unable to solve this block!")
 }
 
 func main() {
-	blockchain, err := getChain()
-	if err != nil {
-		panic(err)
-	}
-	// for testing 
-	blockchain[1].set_blockid()
-	//fmt.Println(blockchain[1])
+	for {
+		// fetch blocks
+		blockchain, err := getChain()
+		if err != nil {
+			fmt.Printf("Chain fetcher exited with message: %s\n", err)
+			fmt.Println("Exiting.")
+			return
+		}
 
-	newchain, err := mineChain(blockchain)
-	if err != nil {
-		panic(err)
-	}
+		// mine a block
+		newchain, err := mineChain(blockchain)
+		if err != nil {
+			fmt.Printf("Miner exited with message: %s\n", err)
+			fmt.Println("Exiting.")
+			return
+		}
 
-	json_chain, err := json.Marshal(newchain);
-	if  err != nil {
-		panic(err)
-	}
-	if err := postChain(json_chain); err != nil {
-		panic(err)
+		// json encode mined block
+		json_chain, err := json.Marshal(newchain);
+		if  err != nil {
+			panic(err)
+		}
+
+		// post mined block to blockserver
+		if err := postChain(json_chain); err != nil {
+			panic(err)
+		}
 	}
 }
