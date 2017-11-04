@@ -220,16 +220,17 @@ func toil(hashrate_report *chan int, quit *chan bool) {
 		// fetch blocks
 		blockchain, err := getChain()
 		if err != nil {
-			fmt.Printf("Chain fetcher exited with message: %s\n", err)
-			fmt.Println("Exiting.")
-			return
+			log.Warn(fmt.Sprintf("Chain fetcher exited with message: %s", err))
+			log.Info("Sleeping until retry.")
+			time.Sleep(10 * time.Second)
+			continue
 		}
 
 		// mine a block
 		newchain, err := mineChain(blockchain, hashrate_report, quit)
 		if err != nil {
-			fmt.Printf("Miner exited with message: %s\n", err)
-			fmt.Println("Exiting.")
+			log.Info(fmt.Sprintf("Miner exited with message: %s", err))
+			log.Info("Exiting.")
 			return
 		}
 
@@ -258,7 +259,8 @@ func reportStatus(username string, client_id string, hashrate_report *chan int) 
 		status_data, _ := json.Marshal(status)
 
 		if err := postStatus(status_data); err != nil {
-			panic(err)
+			log.Warn(fmt.Sprintf("Error posting status to blockserver: %s", err))
+			continue
 		}
 	}
 }
