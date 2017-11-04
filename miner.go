@@ -2,6 +2,7 @@ package main
 
 import "fmt"
 import "os"
+import "runtime"
 import "strings"
 import "bytes"
 import "strconv"
@@ -15,6 +16,7 @@ import "github.com/pkg/errors"
 import (log "github.com/sirupsen/logrus")
 
 var blockserver string = "https://rob.salmond.ca/mine"
+//var blockserver string = "http://localhost:5000/mine"
 
 type Status struct {
 	Username string `json:"username"`
@@ -25,6 +27,7 @@ type Status struct {
 type Config struct {
 	Username string `json:"username"`
 	ClientId string `json:"client_id"`
+	MaxWorkers int `json:"max_workers"`
 }
 
 type Block struct {
@@ -99,7 +102,36 @@ func difficultyTarget(target int) string {
 	return target_buffer.String()
 }
 
-func mineChain(c []Block, hashrate_report *chan int, quit *chan bool) ([]Block, error) {
+func hashWorker(result *chan Block, end_hashrate *chan int, current_block *Block, worker_id int) {
+	hashed := make([]byte,0)
+	hash_count := 0
+	hashes_per_sec := 0
+	report_interval := 30
+
+	random := rand.New(rand.NewSource(time.Now().UnixNano()))
+	difficulty_target := difficultyTarget(current_block.Difficulty)
+
+	start_time := time.Now().Unix()
+	// hash block with random nonce values until we hit a hash that has enough 0's 
+	// at the beginning to satisfy the difficulty requirement
+	for {
+		current_block.Nonce = random.Int()
+		hashed = current_block.hash()
+		hashed_string := fmt.Sprintf("%x", hashed)
+		if hashed_string[0:current_block.Difficulty] == difficulty_target {
+			*result <- *current_block
+		}
+		hash_count++
+		if start_time + int64(report_interval) < time.Now().Unix() {
+			hashes_per_sec = hash_count / report_interval
+			log.Info(fmt.Sprintf("Worker: %d hashes per second: %d", worker_id, hashes_per_sec))
+			*end_hashrate <- hashes_per_sec
+			return
+		}
+	}
+}
+
+func mineChain(c []Block, hashrate_report *chan int, quit *chan bool, max_workers int) ([]Block, error) {
 	// mine a block on the chain until it is solved then return the chain for processing back to the server
 	var currentBlock Block
 	var currentBlock_num int
@@ -122,78 +154,89 @@ func mineChain(c []Block, hashrate_report *chan int, quit *chan bool) ([]Block, 
 
 	currentBlock.set_blockid()
 	currentBlock.Previous_hash = fmt.Sprintf("%x", previousBlock.hash())
-	difficulty_target := difficultyTarget(currentBlock.Difficulty)
 
-	hashed := make([]byte,0)
-	random := rand.New(rand.NewSource(time.Now().UnixNano()))
-	hash_count := 0
-	hashes_per_sec := 0
-	report_interval := 30
-	start_time := time.Now().Unix()
-	// hash block with random nonce values until we hit a hash that has enough 0's 
-	// at the beginning to satisfy the difficulty requirement
+	//func hashWorker(result *chan Block, hashrate_report *chan int, current_block *Block) {
+	result := make(chan Block)
+	end_hashrate := make(chan int)
+	ended_count := 0
+	total_hashrate := 0
 	for {
-		currentBlock.Nonce = random.Int()
-		hashed = currentBlock.hash()
-		hashed_string := fmt.Sprintf("%x", hashed)
-		if hashed_string[0:currentBlock.Difficulty] == difficulty_target {
-			c[currentBlock_num] = currentBlock
-			return c, nil
+		// launch an async hashworker to try random nonces
+		for i := 0; i < max_workers; i++ {
+			log.Debug(fmt.Sprintf("Launching worker id: %d", i))
+			go hashWorker(&result, &end_hashrate, &currentBlock, i)
 		}
-		hash_count++
-		if start_time + int64(report_interval) < time.Now().Unix() {
-			hashes_per_sec = hash_count / report_interval
-			log.Info(fmt.Sprintf("Hashes per second: %d", hashes_per_sec))
-			*hashrate_report <- hashes_per_sec
-			hash_count = 0
-			start_time = time.Now().Unix()
-			return nil, nil
+
+		for j := 0; j < max_workers; j++ {
+			select {
+			// return if we mine a block so it can be sent to the blockserver and we'll fetch the next block
+			case retval := <-result:
+				c[currentBlock_num] = retval
+				return c, nil
+			// if all the hashworkers ended their report interval, continue and spawn new ones
+			case rate := <-end_hashrate:
+				ended_count++
+				total_hashrate += rate
+				if ended_count == max_workers {
+					log.Info(fmt.Sprintf("Total hashes per second: %d", total_hashrate))
+					*hashrate_report <- total_hashrate
+					ended_count = 0
+					total_hashrate = 0
+					continue
+				}
+			}
 		}
 	}
 	log.Info(fmt.Sprintf("Block: %+v\n", currentBlock))
 	return nil, errors.New("Unable to solve this block!")
 }
 
-func getConfig() (username string, clientid string, config_error error) {
+func getConfig(username string) (*Config, error) {
 	// either produce a new config file or read an existing one
 
-	config := Config{}
+	config := new(Config)
+
 	config_filename := "miner_config.json"
+
 	config_default_username := "your username here"
+	if username != "" {
+		config_default_username = username
+	}
 
 	if _, err := os.Stat(config_filename); os.IsNotExist(err) {
 		// generate a new config file
 		config.Username = config_default_username
+		config.MaxWorkers = runtime.NumCPU()
 		random := rand.New(rand.NewSource(time.Now().UnixNano()))
 		config.ClientId = strings.ToUpper(fmt.Sprintf("%x", random.Int()))
 		config_data, _ := json.Marshal(config)
 
 		file, file_err := os.Create(config_filename)
 		if file_err != nil {
-			return "", "", errors.Wrap(file_err, "Unable to create config file: " + config_filename)
+			return nil, errors.Wrap(file_err, "Unable to create config file: " + config_filename)
 		}
 		defer file.Close()
 
 		_, write_err := file.Write(config_data)
 		if write_err != nil {
-			return "", "", errors.Wrap(file_err, "Unable to write to config file: " + config_filename)
+			return nil, errors.Wrap(file_err, "Unable to write to config file: " + config_filename)
 		}
-		return "", "", errors.New("No config file found, a new one has been created. Please configure your username and restart the miner.")
+		return nil, errors.New("No config file found, a new one has been created. Please configure your username and restart the miner.")
 	} else {
 		config_data, file_err := ioutil.ReadFile(config_filename)
 		if err != nil {
-			return "", "", errors.Wrap(file_err, "Unable to read config file: " + config_filename)
+			return nil, errors.Wrap(file_err, "Unable to read config file: " + config_filename)
 		}
 
 		if json_err := json.Unmarshal(config_data, &config); json_err != nil {
-			return "", "", errors.Wrap(json_err, "Unable to parse config json.")
+			return nil, errors.Wrap(json_err, "Unable to parse config json.")
 		}
 		if config.Username == config_default_username {
-			return "", "", errors.New("Please edit config file and add a username before restarting miner.")
+			return nil, errors.New("Please edit config file and add a username before restarting miner.")
 		}
-		return config.Username, config.ClientId, nil
+		return config, nil
 	}
-	return "", "", nil
+	return nil, nil
 }
 
 func postStatus(status_json []byte) error {
@@ -213,7 +256,7 @@ func postStatus(status_json []byte) error {
 	return nil
 }
 
-func toil(hashrate_report *chan int, quit *chan bool) {
+func toil(hashrate_report *chan int, quit *chan bool, max_workers int) {
 	// slave away in the mines
 	for {
 		// fetch blocks
@@ -226,7 +269,7 @@ func toil(hashrate_report *chan int, quit *chan bool) {
 		}
 
 		// mine a block
-		newchain, err := mineChain(blockchain, hashrate_report, quit)
+		newchain, err := mineChain(blockchain, hashrate_report, quit, max_workers)
 		if err != nil {
 			log.Info(fmt.Sprintf("Miner exited with message: %s", err))
 			log.Info("Exiting.")
@@ -264,17 +307,57 @@ func reportStatus(username string, client_id string, hashrate_report *chan int) 
 	}
 }
 
+func printUsage() {
+	fmt.Println("Usage:")
+	fmt.Printf("\t%s <username>", os.Args[1])
+	fmt.Printf("\tGenerate a new config file using the specified username.")
+	fmt.Printf("\t%s", os.Args[1])
+	fmt.Printf("\tStart mining using existing config file or generate a default config if none is present.")
+}
+
+func needHelp(param string) (n bool) {
+	switch param {
+	case "-h":
+		return true
+	case "--help":
+		return true
+	case "help":
+		return true
+	default:
+		return false
+	}
+}
+
 func main() {
-	username, client_id, err := getConfig()
+	var config *Config
+	var err error
+
+	// fiddle about with args
+	if len(os.Args) == 2 {
+		// display help and exit
+		if needHelp(os.Args[1]) {
+			printUsage()
+			return
+		// if arg doesnt look like help accept it as username for config
+		} else {
+			config, err = getConfig(os.Args[1])
+		}
+	// just go ahead and load config then
+	} else {
+		config, err = getConfig("")
+	}
+
 	if err != nil {
 		fmt.Printf("%s\n", err)
 		fmt.Println("Exiting.")
 		return
 	}
 
+	log.Info(fmt.Sprintf("Detected %d available CPU cores.", runtime.NumCPU()))
+	log.Info(fmt.Sprintf("Launching with configuration=> username: %s, client_id: %s, max_workers: %d", config.Username, config.ClientId, config.MaxWorkers))
 	hashrate_report := make(chan int)
 	quit := make(chan bool)
-	go toil(&hashrate_report, &quit)
-	go reportStatus(username, client_id, &hashrate_report)
+	go toil(&hashrate_report, &quit, config.MaxWorkers)
+	go reportStatus(config.Username, config.ClientId, &hashrate_report)
 	select {}
 }
