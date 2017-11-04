@@ -182,7 +182,7 @@ class Block(db.Model):
             app.logger.info('Invalid block {}, discarding.'.format(block))
             return
 
-@app.route('/chain', methods=['GET', 'POST'])
+@app.route('/mine/chain', methods=['GET', 'POST'])
 def chain():
     if request.method == 'GET':
         return jsonify(Block.chain())
@@ -203,7 +203,7 @@ def chain():
             return "invalid post", 400
 
 
-@app.route('/status', methods=['GET', 'POST'])
+@app.route('/mine/status', methods=['GET', 'POST'])
 def status():
     if request.method == 'GET':
         return jsonify(Status.current_status())
