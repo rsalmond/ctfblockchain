@@ -14,8 +14,7 @@ import "encoding/json"
 import "github.com/pkg/errors"
 import (log "github.com/sirupsen/logrus")
 
-//var blockserver string = "http://192.168.0.19:5000"
-var blockserver string = "http://localhost:5000"
+var blockserver string = "https://rob.salmond.ca/mine"
 
 type Status struct {
 	Username string `json:"username"`
