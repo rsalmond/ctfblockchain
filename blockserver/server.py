@@ -16,9 +16,61 @@ db.init_app(app)
 class Status(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     client_id = db.Column(db.String, unique=True)
-    user = db.Column(db.String)
+    username = db.Column(db.String)
     updated_at = db.Column(db.DateTime, default=dt.utcnow)
     hashrate = db.Column(db.Integer)
+
+    def save(self):
+        db.session.add(self)
+        db.session.commit()
+
+    @classmethod
+    def from_client_id(cls, client_id):
+        return db.session.query(cls).filter(cls.client_id==client_id).first()
+
+    @classmethod
+    def validate(cls, status):
+        for attr in ('username', 'client_id', 'hashrate'):
+            if not status.get(attr):
+                return False
+
+        if not isinstance(status.get('username'), basestring):
+            return False
+
+        if not isinstance(status.get('client_id'), basestring):
+            return False
+
+        if not isinstance(status.get('hashrate'), int):
+            return False
+
+        return True
+
+    @classmethod
+    def update(cls, status):
+        if not cls.validate(status):
+            app.logger.info(status)
+            app.logger.info('Invalid status message received, discarding.')
+            return False
+
+        registered_status = Status.from_client_id(status.get('client_id'))
+        if registered_status:
+            registered_status.updated_at = dt.utcnow()
+            registered_status.hashrate = status.get('hashrate')
+            registered_status.save()
+            app.logger.info('Updated status for {}/{} with hashrate {}'.format(registered_status.username, \
+                    registered_status.client_id, \
+                    registered_status.hashrate))
+        else:
+            new_status = Status()
+            new_status.client_id = status.get('client_id')
+            new_status.username = status.get('username')
+            new_status.hashrate = status.get('hashrate')
+            new_status.save()
+            app.logger.info('Registered new status for {}/{} with hashrate {}'.format(new_status.username, \
+                    new_status.client_id, \
+                    new_status.hashrate))
+
+        return True
 
 class Block(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -124,9 +176,9 @@ def chain():
                 else:
                     return 'blockchain not updated'
             else:
-                return "invalid json"
+                return "invalid json", 400
         else:
-            return "invalid post"
+            return "invalid post", 400
 
 
 @app.route('/status', methods=['GET', 'POST'])
@@ -134,5 +186,13 @@ def status():
     if request.method == 'GET':
         pass
     elif request.method == 'POST':
-        import pdb
-        pdb.set_trace()
+        if request.json is not None:
+            if isinstance(request.json, dict):
+                if Status.update(request.json):
+                    return 'status updated'
+                else:
+                    return 'error updating status', 500
+            else:
+                return 'invalid json', 400
+        else:
+            return 'invalid post', 400
