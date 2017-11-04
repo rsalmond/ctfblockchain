@@ -27,7 +27,7 @@ class Status(db.Model):
 
     @classmethod
     def current_status(cls):
-        time_horizon = dt.utcnow() - timedelta(seconds=10)
+        time_horizon = dt.utcnow() - timedelta(seconds=30)
         current_statuses = db.session.query(cls).filter(cls.updated_at > time_horizon).all()
 
         user_rates = {}
@@ -39,10 +39,18 @@ class Status(db.Model):
                 user_rates[status.username] = status.hashrate
             else:
                 user_rates[status.username] += status.hashrate
+
+        user_report = {}
+        for user, rate in user_rates.items():
+            miner_count = db.session.query(cls).filter(cls.username==user).count()
+            user_report[user] = {'hashrate': rate,
+                    'percentage_of_pool': round((rate / float(total_hashrate) * 100), 2),
+                    'active_miners': miner_count}
+
         report = {}
         report['connected_clients'] = len(current_statuses)
         report['total_hashrate'] = total_hashrate
-        report['user_hashrates'] = user_rates
+        report['users'] = user_report
 
         return report
 
