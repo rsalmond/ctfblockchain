@@ -131,14 +131,14 @@ func hashWorker(result *chan Block, end_hashrate *chan int, current_block *Block
 	}
 }
 
-func mineChain(c []Block, hashrate_report *chan int, quit *chan bool, max_workers int) ([]Block, error) {
+func mineChain(c *[]Block, hashrate_report *chan int, quit *chan bool, max_workers int) ([]Block, error) {
 	// mine a block on the chain until it is solved then return the chain for processing back to the server
 	var currentBlock Block
 	var currentBlock_num int
 	var previousBlock Block
-	for i, block := range c {
+	for i, block := range *c {
 		if block.Nonce == 0 {
-			previousBlock = c[i-1]
+			previousBlock = (*c)[i-1]
 			currentBlock_num = i
 			currentBlock = block
 			break
@@ -171,8 +171,8 @@ func mineChain(c []Block, hashrate_report *chan int, quit *chan bool, max_worker
 			select {
 			// return if we mine a block so it can be sent to the blockserver and we'll fetch the next block
 			case retval := <-result:
-				c[currentBlock_num] = retval
-				return c, nil
+				(*c)[currentBlock_num] = retval
+				return *c, nil
 			// if all the hashworkers ended their report interval, continue and spawn new ones
 			case rate := <-end_hashrate:
 				ended_count++
@@ -182,7 +182,7 @@ func mineChain(c []Block, hashrate_report *chan int, quit *chan bool, max_worker
 					*hashrate_report <- total_hashrate
 					ended_count = 0
 					total_hashrate = 0
-					continue
+					return nil, nil
 				}
 			}
 		}
@@ -269,7 +269,7 @@ func toil(hashrate_report *chan int, quit *chan bool, max_workers int) {
 		}
 
 		// mine a block
-		newchain, err := mineChain(blockchain, hashrate_report, quit, max_workers)
+		newchain, err := mineChain(&blockchain, hashrate_report, quit, max_workers)
 		if err != nil {
 			log.Info(fmt.Sprintf("Miner exited with message: %s", err))
 			log.Info("Exiting.")
