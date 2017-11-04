@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from datetime import datetime as dt
+from datetime import timedelta
 import flask_sqlalchemy
 import hashlib
 import logging
@@ -23,6 +24,27 @@ class Status(db.Model):
     def save(self):
         db.session.add(self)
         db.session.commit()
+
+    @classmethod
+    def current_status(cls):
+        time_horizon = dt.utcnow() - timedelta(seconds=10)
+        current_statuses = db.session.query(cls).filter(cls.updated_at > time_horizon).all()
+
+        user_rates = {}
+        total_hashrate = 0
+
+        for status in current_statuses:
+            total_hashrate += status.hashrate
+            if status.username not in user_rates:
+                user_rates[status.username] = status.hashrate
+            else:
+                user_rates[status.username] += status.hashrate
+        report = {}
+        report['connected_clients'] = len(current_statuses)
+        report['total_hashrate'] = total_hashrate
+        report['user_hashrates'] = user_rates
+
+        return report
 
     @classmethod
     def from_client_id(cls, client_id):
@@ -184,7 +206,8 @@ def chain():
 @app.route('/status', methods=['GET', 'POST'])
 def status():
     if request.method == 'GET':
-        pass
+        return jsonify(Status.current_status())
+
     elif request.method == 'POST':
         if request.json is not None:
             if isinstance(request.json, dict):
