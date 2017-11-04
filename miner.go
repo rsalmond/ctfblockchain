@@ -128,7 +128,7 @@ func mineChain(c []Block, hashrate_report *chan int, quit *chan bool) ([]Block, 
 	random := rand.New(rand.NewSource(time.Now().UnixNano()))
 	hash_count := 0
 	hashes_per_sec := 0
-	report_interval := 5
+	report_interval := 30
 	start_time := time.Now().Unix()
 	// hash block with random nonce values until we hit a hash that has enough 0's 
 	// at the beginning to satisfy the difficulty requirement
