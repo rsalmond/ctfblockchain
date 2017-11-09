@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from appoptics.middleware import AppOpticsMiddleware
 from datetime import datetime as dt
 from datetime import timedelta
 import flask_sqlalchemy
@@ -8,6 +9,7 @@ import sys
 
 db = flask_sqlalchemy.SQLAlchemy()
 app = Flask(__name__)
+app.wsgi_app = AppOpticsMiddleware(app.wsgi_app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blocks.db'
 app.logger.addHandler(logging.StreamHandler(sys.stdout))
 app.logger.setLevel(logging.INFO)
