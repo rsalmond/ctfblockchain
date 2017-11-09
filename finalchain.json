@@ -1,0 +1,72 @@
+[
+  {
+    "data": "Genesis Block for CTF contest, all block chains must start with this block. This is equivalent to Big Bang, time didn't exist before this", 
+    "difficulty": 8, 
+    "identifier": "000102030405060708090A0B0C0D0E0F", 
+    "nonce": 3754873684, 
+    "previous_hash": "None"
+  }, 
+  {
+    "data": "Four be the things I am wiser to know:", 
+    "difficulty": 4, 
+    "identifier": "FD924871FA99A06D5DFA814018FFE127", 
+    "nonce": 2299635346216743065, 
+    "previous_hash": "00000000c55f6538ae0a9d1e094c41781f4d05d789ab435c5ec1d4b8bd8738ba"
+  }, 
+  {
+    "data": "Idleness, sorrow, a friend, and a foe.", 
+    "difficulty": 4, 
+    "identifier": "443795799B07291EDCB44C26B5DB72C2", 
+    "nonce": 3954579422549485859, 
+    "previous_hash": "0000617c8b0ac1a381e4152a3512eb5f61f68c78bbc60b44c0975ed5df32b088"
+  }, 
+  {
+    "data": "Four be the things I\\'d been better without:", 
+    "difficulty": 5, 
+    "identifier": "4432E12BE34549EE6F18C5068CA1B763", 
+    "nonce": 1288915224433174834, 
+    "previous_hash": "0000db19b1570b4f6bda21119b23b584a9c849544a902a03953c47b5c0f11964"
+  }, 
+  {
+    "data": "Love, curiosity, freckles, and doubt.", 
+    "difficulty": 6, 
+    "identifier": "549EA1FB8C3A5E883E77C81234112E53", 
+    "nonce": 6523407865715851502, 
+    "previous_hash": "000006f8abc07719eb46f3bc67f733ccb163ad5c5b0cadfc1eeab5be8adba046"
+  }, 
+  {
+    "data": "Three be the things I shall never attain:", 
+    "difficulty": 7, 
+    "identifier": "1935060E3F725326FD03936E99BC647F", 
+    "nonce": 7277340009937250754, 
+    "previous_hash": "000000df7356c72b83619b3e89aaefa9f26f5173f63fa64d1a509c0d00a55c52"
+  }, 
+  {
+    "data": "Envy, content, and sufficient champagne.", 
+    "difficulty": 9, 
+    "identifier": "18F155DD7F95EC4029D5825A3399938D", 
+    "nonce": 6155614814358225426, 
+    "previous_hash": "00000007136ea0e5d4f6e6ca50f2c13f565d866b81dec1bc645316dc47a51bc1"
+  }, 
+  {
+    "data": "Three be the things I shall have till I die:", 
+    "difficulty": 11, 
+    "identifier": "292F17817EC09AB2209091061BC3A46E", 
+    "nonce": 1613003719999417896, 
+    "previous_hash": "00000000087f94e90db3d4121caf275d5d36efb7bc76a22059632dfeccd3eac5"
+  }, 
+  {
+    "data": "Laughter and hope and a sock in the eye.", 
+    "difficulty": 13, 
+    "identifier": "", 
+    "nonce": 0, 
+    "previous_hash": ""
+  }, 
+  {
+    "data": " -Dorothy Parker", 
+    "difficulty": 16, 
+    "identifier": "", 
+    "nonce": 0, 
+    "previous_hash": ""
+  }
+]
